@@ -308,7 +308,6 @@ class Middleware {
 				sprintf( __( 'Missing parameter(s): %s' ), implode( ', ', $required ) ),
 				array( 'status' => 400, 'params' => $required )
 			);
-
 		}
 
 		$invalid_params = array();
@@ -352,7 +351,11 @@ class Middleware {
 	 */
 	protected function transform_schema_to_json( array $schema ) {
 
-		unset( $schema['arg_options'], $schema['sanitize_callback'], $schema['validate_callback'] );
+		if ( ! empty( $schema['properties'] ) ) {
+			foreach ( $schema['properties'] as &$property ) {
+				unset( $property['arg_options'], $property['sanitize_callback'], $property['validate_callback'] );
+			}
+		}
 
 		return wp_json_encode( $schema );
 	}
@@ -376,7 +379,7 @@ class Middleware {
 	 * @since 1.0.0
 	 */
 	protected function register_schema_route() {
-		register_rest_route( $this->namespace, 'schemas/(?P<title>[\S+])', array(
+		register_rest_route( $this->namespace, '/schemas/(?P<title>\S+)', array(
 			'args'     => array(
 				'method' => array(
 					'description' => $this->strings['methodParamDescription'],
@@ -421,7 +424,7 @@ class Middleware {
 			}
 		}
 
-		return new \WP_REST_Response( $schema );
+		return new \WP_REST_Response( json_decode( wp_json_encode( $schema ), true ) );
 	}
 
 	/**

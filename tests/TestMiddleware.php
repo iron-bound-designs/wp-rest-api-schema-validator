@@ -154,7 +154,7 @@ class TestMiddleware extends TestCase {
 			array(
 				'methods'  => 'PUT',
 				'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
-				'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+				'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'PUT' ),
 			),
 			'schema' => array( $this, 'get_schema' ),
 		) );
@@ -342,6 +342,32 @@ class TestMiddleware extends TestCase {
 			$this->assertArrayHasKey( 'sanitize_callback', $arg, "Sanitize callback exists for {$key}." );
 			$this->assertFalse( $arg['sanitize_callback'] );
 		}
+	}
+
+	public function test_get_schema_route() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( static::$middleware->get_url_for_schema( 'test' ) );
+
+		$response = $this->server->dispatch( $request );
+		$schema   = $response->get_data();
+
+		$this->assertInternalType( 'array', $schema );
+		$this->assertArrayHasKey( 'title', $schema );
+		$this->assertEquals( 'test', $schema['title'] );
+		$this->assertArrayHasKey( 'properties', $schema );
+		$this->assertArrayHasKey( 'enum', $schema['properties'] );
+		$this->assertArrayHasKey( 'validateCallback', $schema['properties'] );
+		$this->assertArrayNotHasKey( 'arg_options', $schema['properties']['validateCallback'] );
 	}
 
 	public function get_schema() {
