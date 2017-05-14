@@ -31,11 +31,13 @@ That's it!
 
 ### GET and DELETE Requests
 
-Query parameters passed with GET or DELETE requests are validated against the 'args' option that is passed when registering the route.
+Query parameters passed with GET or DELETE requests are validated against the `args` option that is passed when registering the route.
 
 ### Technical Details
  
-The middleware will automatically detect the addition of routes in the provided namespace. The default WordPress core validation and sanitization functions will be disabled. Schema validation will be performed on the `rest_dispatch_request`hook.
+On `rest_api_init#100`, the middleware will iterate over the registered routes in the provided namespace. The default WordPress core validation and sanitization functions will be disabled. 
+
+Schema validation will be performed on the `rest_dispatch_request#10` hook.
 
 `WP_Error` objects will be returned that match the format in `WP_REST_Request`. Mainly, an error code of `rest_missing_callback_param` or `rest_invalid_param`, a `400` response status code, and detailed error information in `data.params`. 
 
@@ -77,7 +79,7 @@ register_rest_route( 'namespace/v1', 'route', [
     ],
     [
         'methods'  => 'POST',
-        'callback' => array( $this, 'create_item ),
+        'callback' => array( $this, 'create_item' ),
          // See WP_REST_Controller::get_endpoint_args_for_item_schema() for reference.
         'args'     => $this->get_endpoint_args_for_post_schema(),
         'schema'   => [ $this, 'get_public_item_post_schema' ],
@@ -131,7 +133,13 @@ $middleware->add_shared_schema( [
 
 ### Schema Routes
 
-After all routes have been registered, the middleware will register its own route `namespace/v1/schemas/(?P<title>[\S+])`. This route returns the plain schema document for the given title. To retrieve a schema for a given HTTP method, pass the desired upper-cased HTTP method to the `method` query param.
+After all routes have been registered, the middleware will register its own route.
+ 
+```
+namespace/v1/schemas/(?P<title>[\S+])
+``` 
+
+This route returns the plain schema document for the given title. To retrieve a schema for a given HTTP method, pass the desired upper-cased HTTP method to the `method` query param.
 
 ```HTTP
 GET https://example.org/wp-json/namespace/v1/schemas/transaction?method=POST
