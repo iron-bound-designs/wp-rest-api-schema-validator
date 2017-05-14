@@ -132,7 +132,7 @@ class Middleware {
 
 			$default_title       = $default_schema['title'];
 			$default_url         = $this->get_url_for_schema( $default_title );
-			$default_schema_json = wp_json_encode( $default_schema );
+			$default_schema_json = $this->transform_schema_to_json( $default_schema );
 
 			$titles[ $route ] = array();
 
@@ -149,7 +149,7 @@ class Middleware {
 				$methods = is_string( $handler['methods'] ) ? explode( ',', $handler['methods'] ) : $handler['methods'];
 
 				if ( ! $single_method && isset( $handler['schema'] ) ) {
-					$method_schema_json = wp_json_encode( call_user_func( $handler['schema'] ) );
+					$method_schema_json = $this->transform_schema_to_json( call_user_func( $handler['schema'] ) );
 				} else {
 					$method_schema_json = null;
 				}
@@ -206,12 +206,13 @@ class Middleware {
 
 		$method = $request->get_method();
 
-		if ( $method === 'GET' ) {
-			$schema_object = json_decode( wp_json_encode( array(
+		if ( $method === 'GET' || $method === 'DELETE' ) {
+			$schema_object  = json_decode( $this->transform_schema_to_json( array(
 				'type'       => 'object',
 				'properties' => $handler['args'],
 			) ) );
-			$properties    = $handler['args'];
+			$properties     = $handler['args'];
+			$types_to_check = array( 'GET' );
 		} else {
 			$url           = $this->get_url_for_schema( $this->routes_to_schema_titles[ $route ][ $method ] );
 			$schema_object = clone $this->schema_storage->getSchema( $url );
@@ -220,13 +221,13 @@ class Middleware {
 				return $response;
 			}
 
-			$properties = get_object_vars( $schema_object->properties );
+			$properties     = get_object_vars( $schema_object->properties );
+			$types_to_check = array( 'JSON', 'POST' );
 		}
 
 		$has = $this->make_has_closure( $request );
 
-		$to_validate    = array();
-		$types_to_check = $method === 'GET' ? array( 'GET' ) : array( 'JSON', 'POST' );
+		$to_validate = array();
 
 		foreach ( $properties as $property => $config ) {
 
@@ -292,6 +293,24 @@ class Middleware {
 			return $return;
 		}
 
+		$errors         = $validator->getErrors();
+		$missing_errors = array_filter( $errors, function ( $error ) { return $error['constraint'] === 'required'; } );
+
+		$required = array();
+
+		foreach ( $missing_errors as $missing_error ) {
+			$required[] = $missing_error['property'];
+		}
+
+		if ( $required ) {
+			return new \WP_Error(
+				'rest_missing_callback_param',
+				sprintf( __( 'Missing parameter(s): %s' ), implode( ', ', $required ) ),
+				array( 'status' => 400, 'params' => $required )
+			);
+
+		}
+
 		$invalid_params = array();
 
 		foreach ( $validator->getErrors() as $error ) {
@@ -320,6 +339,22 @@ class Middleware {
 		);
 
 		return new Validator( $factory );
+	}
+
+	/**
+	 * Transform an array based schema to JSON.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array $schema
+	 *
+	 * @return false|string
+	 */
+	protected function transform_schema_to_json( array $schema ) {
+
+		unset( $schema['arg_options'], $schema['sanitize_callback'], $schema['validate_callback'] );
+
+		return wp_json_encode( $schema );
 	}
 
 	/**

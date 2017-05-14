@@ -180,6 +180,170 @@ class TestMiddleware extends TestCase {
 		$this->assertErrorResponse( 'rest_invalid_param', $response );
 	}
 
+	public function test_get_request() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'GET',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => array(
+				'getParam' => array(
+					'type' => 'string',
+					'enum' => array( 'alice', 'bob', 'mallory' )
+				),
+			),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_query_params( array( 'getParam' => 'eve' ) );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_param', $response );
+	}
+
+	public function test_get_request_without_schema_registered() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'GET',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => array(
+				'getParam' => array(
+					'type' => 'string',
+					'enum' => array( 'alice', 'bob', 'mallory' )
+				),
+			),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_query_params( array( 'getParam' => 'eve' ) );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_param', $response );
+	}
+
+	public function test_delete_request() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'DELETE',
+			'callback' => function () { return new \WP_REST_Response( null, 204 ); },
+			'args'     => array(
+				'getParam' => array(
+					'type' => 'string',
+					'enum' => array( 'alice', 'bob', 'mallory' )
+				),
+			),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'DELETE' );
+		$request->set_query_params( array( 'getParam' => 'eve' ) );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_param', $response );
+	}
+
+	public function test_validate_callback_is_called() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'validateCallback' => 'valid' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertArrayHasKey( 'enum', $response->get_data() );
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'validateCallback' => 'invalid' ) ) );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_param', $response );
+	}
+
+	public function test_required() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema_with_required(), 'POST' ),
+			'schema'   => array( $this, 'get_schema_with_required' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'unneeded' => 'hi' ) ) );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_missing_callback_param', $response );
+	}
+
+	public function test_core_validators_are_removed_by_default() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'enum' => 'b' ) ) );
+
+		$this->server->dispatch( $request );
+
+		$attributes = $request->get_attributes();
+
+		$this->assertArrayHasKey( 'args', $attributes );
+
+		foreach ( $attributes['args'] as $key => $arg ) {
+
+			if ( $key === 'validateCallback' ) {
+				continue;
+			}
+
+			$this->assertArrayHasKey( 'validate_callback', $arg, "Validate callback exists for {$key}." );
+			$this->assertFalse( $arg['validate_callback'] );
+
+			$this->assertArrayHasKey( 'sanitize_callback', $arg, "Sanitize callback exists for {$key}." );
+			$this->assertFalse( $arg['sanitize_callback'] );
+		}
+	}
+
 	public function get_schema() {
 		return array(
 			'$schema'    => 'http://json-schema.org/schema#',
@@ -195,6 +359,15 @@ class TestMiddleware extends TestCase {
 				),
 				'shared' => array(
 					'$ref' => static::$middleware->get_url_for_schema( 'shared' ),
+				),
+
+				'validateCallback' => array(
+					'type'        => 'string',
+					'arg_options' => array(
+						'validate_callback' => function ( $value ) {
+							return $value === 'valid';
+						}
+					),
 				)
 			),
 		);
@@ -209,6 +382,24 @@ class TestMiddleware extends TestCase {
 				'enum' => array(
 					'type' => 'string',
 					'enum' => array( 'a', 'b' )
+				),
+			),
+		);
+	}
+
+	public function get_schema_with_required() {
+		return array(
+			'$schema'    => 'http://json-schema.org/schema#',
+			'title'      => 'test',
+			'type'       => 'object',
+			'properties' => array(
+				'needed'   => array(
+					'type'     => 'string',
+					'required' => true,
+				),
+				'unneeded' => array(
+					'type'     => 'string',
+					'required' => false,
 				),
 			),
 		);
