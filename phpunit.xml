@@ -1,0 +1,13 @@
+<phpunit bootstrap="./tests/bootstrap.php" backupGlobals="false" colors="true" convertErrorsToExceptions="true"
+         convertNoticesToExceptions="true" convertWarningsToExceptions="true">
+
+    <testsuites>
+        <testsuite name="unit">
+            <directory prefix="Test" suffix=".php">./tests/</directory>
+        </testsuite>
+    </testsuites>
+
+    <whitelist processUncoveredFilesFromWhitelist="true">
+        <directory suffix=".php">./src</directory>
+    </whitelist>
+</phpunit>
