@@ -28,6 +28,9 @@ class Middleware {
 	/** @var string */
 	private $namespace;
 
+	/** @var array */
+	private $strings;
+
 	/** @var int */
 	private $check_mode;
 
@@ -47,10 +50,15 @@ class Middleware {
 	 * Middleware constructor.
 	 *
 	 * @param string $namespace
+	 * @param array  $strings
 	 * @param int    $check_mode Check mode. See Constraint class constants.
 	 */
-	public function __construct( $namespace, $check_mode = 0 ) {
+	public function __construct( $namespace, array $strings = array(), $check_mode = 0 ) {
 		$this->namespace = trim( $namespace, '/' );
+		$this->strings   = wp_parse_args( $strings, array(
+			'methodParamDescription' => 'HTTP method to get the schema for. If not provided, will use the base schema.',
+			'schemaNotFound'         => 'Schema not found.',
+		) );
 
 		if ( $check_mode === 0 ) {
 			$check_mode = Constraint::CHECK_MODE_NORMAL | Constraint::CHECK_MODE_APPLY_DEFAULTS | Constraint::CHECK_MODE_COERCE_TYPES;
@@ -336,7 +344,7 @@ class Middleware {
 		register_rest_route( $this->namespace, 'schemas/(?P<title>[\S+])', array(
 			'args'     => array(
 				'method' => array(
-					'description' => __( 'HTTP method to get the schema for. If not provided, will use the base schema.' ),
+					'description' => $this->strings['methodParamDescription'],
 					'type'        => 'string',
 					'enum'        => array( 'GET', 'POST', 'PUT', 'PATCH', 'DELETE' ),
 				)
@@ -370,7 +378,11 @@ class Middleware {
 		} catch ( ResourceNotFoundException $e ) {
 
 			if ( ! $schema ) {
-				return new \WP_Error( 'schema_not_found', __( 'Schema not found.' ), array( 'status' => \WP_Http::NOT_FOUND ) );
+				return new \WP_Error(
+					'schema_not_found',
+					$this->strings['schemaNotFound'],
+					array( 'status' => \WP_Http::NOT_FOUND )
+				);
 			}
 		}
 
