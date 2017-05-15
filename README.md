@@ -6,7 +6,7 @@ WordPress ships with a validator, `rest_validate_request_arg()`, that supports a
 This library relies upon the [justinrainbow/json-schema](https://github.com/justinrainbow/json-schema) package to do the actual schema validation. This simply bridges the gap between the two.
 
 ## Requirements
-- PHP 5.4+
+- PHP 5.3+
 - WordPress 4.5+
 
 ## Installation

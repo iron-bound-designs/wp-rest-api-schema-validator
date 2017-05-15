@@ -3,10 +3,11 @@
   "description": "Validate WP REST API requests using a complete JSON Schema validator.",
   "type": "library",
   "require": {
+    "php": ">=5.3.29|>=7.0.3",
     "justinrainbow/json-schema": "^5.1"
   },
   "require-dev": {
-    "phpunit/phpunit": "^5.7"
+    "phpunit/phpunit": "^4.8|^5.7"
   },
   "license": "MIT",
   "authors": [
@@ -20,6 +21,11 @@
     "psr-4": {
       "IronBound\\WP_REST_API\\SchemaValidator\\": "src/",
       "IronBound\\WP_REST_API\\SchemaValidator\\Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "platform": {
+      "php": "5.3.29"
     }
   }
 }
