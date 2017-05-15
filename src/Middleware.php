@@ -207,50 +207,25 @@ class Middleware {
 		$method = $request->get_method();
 
 		if ( $method === 'GET' || $method === 'DELETE' ) {
-			$schema_object  = json_decode( $this->transform_schema_to_json( array(
+			$schema_object = json_decode( $this->transform_schema_to_json( array(
 				'type'       => 'object',
 				'properties' => $handler['args'],
 			) ) );
-			$properties     = $handler['args'];
-			$types_to_check = array( 'GET' );
 		} else {
 			$url           = $this->get_url_for_schema( $this->routes_to_schema_titles[ $route ][ $method ] );
 			$schema_object = clone $this->schema_storage->getSchema( $url );
-
-			if ( empty( $schema_object->properties ) ) {
-				return $response;
-			}
-
-			$properties     = get_object_vars( $schema_object->properties );
-			$types_to_check = array( 'JSON', 'POST' );
 		}
 
-		$has = $this->make_has_closure( $request );
-
-		$to_validate = array();
-
-		foreach ( $properties as $property => $config ) {
-
-			if ( ! empty( $config->readonly ) ) {
-				continue;
-			}
-
-			if ( $method !== 'POST' && ! empty( $config->createonly ) ) {
-				$schema_object->properties->$property->required = false;
-
-				continue;
-			}
-
-			if ( $has( $property, $types_to_check ) ) {
-				$to_validate[ $property ] = $request[ $property ];
-			}
-		}
+		$defaults = $request->get_default_params();
+		$request->set_default_params( array() );
+		$to_validate = $request->get_params();
+		$request->set_default_params( $defaults );
 
 		if ( ! $to_validate ) {
 			return $response;
 		}
 
-		$validated = $this->validate_params( $to_validate, $schema_object );
+		$validated = $this->validate_params( $to_validate, $schema_object, $method );
 
 		if ( is_wp_error( $validated ) ) {
 			return $validated;
@@ -272,13 +247,14 @@ class Middleware {
 	 *
 	 * @param array     $to_validate
 	 * @param \stdClass $schema_object
+	 * @param string    $method
 	 *
 	 * @return array|\WP_Error
 	 */
-	protected function validate_params( $to_validate, $schema_object ) {
+	protected function validate_params( $to_validate, $schema_object, $method ) {
 
 		$to_validate = json_decode( wp_json_encode( $to_validate ) );
-		$validator   = $this->make_validator();
+		$validator   = $this->make_validator( $method === 'POST' );
 
 		$validator->validate( $to_validate, $schema_object );
 
@@ -328,14 +304,29 @@ class Middleware {
 	 *
 	 * @since 1.0.0
 	 *
+	 * @param bool $is_create_request
+	 * @param bool $skip_readonly
+	 *
 	 * @return Validator
 	 */
-	protected function make_validator() {
+	protected function make_validator( $is_create_request = false, $skip_readonly = true ) {
 		$factory = new Factory(
 			$this->schema_storage,
 			$this->uri_retriever,
 			$this->check_mode
 		);
+		$factory->setConstraintClass(
+			'undefined',
+			'\IronBound\WP_REST_API\SchemaValidator\UndefinedConstraint'
+		);
+
+		if ( $is_create_request ) {
+			$factory->addConfig( UndefinedConstraint::CHECK_MODE_CREATE_REQUEST );
+		}
+
+		if ( $skip_readonly ) {
+			$factory->addConfig( UndefinedConstraint::CHECK_MODE_SKIP_READONLY );
+		}
 
 		return new Validator( $factory );
 	}
@@ -531,42 +522,6 @@ class Middleware {
 		return \Closure::bind( function ( $server ) {
 			return $server->endpoints;
 		}, null, $server )( $server );
-	}
-
-	/**
-	 * Make a callable scoped to the WP_Rest_Request object to be able to properly determine if a request has a given
-	 * param.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param \WP_REST_Request $request
-	 *
-	 * @return \Closure
-	 */
-	private function make_has_closure( \WP_REST_Request $request ) {
-		return \Closure::bind( function ( $key, array $param_types_to_check ) {
-			$order = $this->get_parameter_order();
-
-			if ( $param_types_to_check ) {
-				$order = array_intersect( $order, $param_types_to_check );
-			}
-
-			if ( ( $i = array_search( 'defaults', $order, true ) ) !== false ) {
-				unset( $order[ $i ] );
-			}
-
-			foreach ( $order as $type ) {
-				if ( ! isset( $this->params[ $type ] ) ) {
-					continue;
-				}
-
-				if ( array_key_exists( $key, $this->params[ $type ] ) ) {
-					return true;
-				}
-			}
-
-			return false;
-		}, $request, $request );
 	}
 
 	/**

@@ -370,23 +370,131 @@ class TestMiddleware extends TestCase {
 		$this->assertArrayNotHasKey( 'arg_options', $schema['properties']['validateCallback'] );
 	}
 
+	public function test_default_is_applied() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'enum' => 'a' ) ) );
+
+		$this->server->dispatch( $request );
+		$json = $request->get_json_params();
+		$this->assertArrayHasKey( 'withDefault', $json );
+		$this->assertEquals( 'hi', $json['withDefault'] );
+	}
+
+	public function test_invalid_readonly_properties_do_not_error() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'readOnly' => 'd' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertEquals( 200, $response->get_status() );
+		$this->assertNull( $request['readOnly'], 'Read only property set to null.' );
+	}
+
+	public function test_invalid_createonly_properties_do_not_error_on_non_create_requests() {
+
+		register_rest_route( 'test', 'simple', array(
+			array(
+				'methods'  => 'POST',
+				'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+				'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+			),
+			array(
+				'methods'  => 'PUT',
+				'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+				'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'PUT' ),
+			),
+			'schema' => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'PUT' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'createOnly' => 'd' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertEquals( 200, $response->get_status() );
+		$this->assertNull( $request['createOnly'], 'Create only property set to null.' );
+	}
+
+	public function test_invalid_createonly_properties_error_on_create_requests() {
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response( array( 'enum' => 'a' ) ); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $this->get_schema(), 'POST' ),
+			'schema'   => array( $this, 'get_schema' ),
+		) );
+
+		static::$middleware->load_schemas( rest_get_server() );
+		static::$middleware->initialize();
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'createOnly' => 'd' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertErrorResponse( 'rest_invalid_param', $response );
+	}
+
 	public function get_schema() {
 		return array(
 			'$schema'    => 'http://json-schema.org/schema#',
 			'title'      => 'test',
 			'type'       => 'object',
 			'properties' => array(
-				'enum'   => array(
+				'enum'             => array(
 					'type' => 'string',
 					'enum' => array( 'a', 'b', 'c' )
 				),
-				'int'    => array(
+				'int'              => array(
 					'type' => 'integer'
 				),
-				'shared' => array(
+				'shared'           => array(
 					'$ref' => static::$middleware->get_url_for_schema( 'shared' ),
 				),
-
+				'withDefault'      => array(
+					'type'    => 'string',
+					'default' => 'hi'
+				),
+				'readOnly'         => array(
+					'type'     => 'string',
+					'enum'     => array( 'a', 'b', 'c' ),
+					'readonly' => true,
+				),
+				'createOnly'       => array(
+					'type'       => 'string',
+					'enum'       => array( 'a', 'b', 'c' ),
+					'createonly' => true,
+				),
 				'validateCallback' => array(
 					'type'        => 'string',
 					'arg_options' => array(
