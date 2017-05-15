@@ -224,10 +224,8 @@ class Middleware {
 			return $validated;
 		}
 
-		$set = $this->make_set_closure( $request );
-
 		foreach ( $validated as $property => $value ) {
-			$set( $property, $value );
+			$this->set_request_param( $request, $property, $value );
 		}
 
 		return null;
@@ -520,22 +518,52 @@ class Middleware {
 	}
 
 	/**
-	 * Make a callable scoped to the WP_REST_Request object to be able to properly set a value in the request object
-	 * while following parameter order. See https://core.trac.wordpress.org/ticket/40344
+	 * Set a parameter's value on a request object.
+	 *
+	 * WP_REST_Request::set_param() does not properly set a value while following parameter order.
+	 * See https://core.trac.wordpress.org/ticket/40344
 	 *
 	 * @since 1.0.0
 	 *
 	 * @param \WP_REST_Request $request
-	 *
-	 * @return \Closure
+	 * @param string           $key
+	 * @param mixed            $value
 	 */
-	private function make_set_closure( \WP_REST_Request $request ) {
-		return \Closure::bind( function ( $key, $value ) {
-			$order = $this->get_parameter_order();
-			$first = reset( $order );
+	protected function set_request_param( \WP_REST_Request $request, $key, $value ) {
 
-			$this->params[ $first ][ $key ] = $value;
-		}, $request, $request );
+		static $property = null;
+
+		if ( ! $property ) {
+			$reflection = new \ReflectionClass( '\WP_REST_Request' );
+			$property   = $reflection->getProperty( 'params' );
+			$property->setAccessible( true );
+		}
+
+		$order = array();
+
+		$content_type = $request->get_content_type();
+
+		if ( $content_type['value'] === 'application/json' ) {
+			$order[] = 'JSON';
+		}
+
+		$accepts_body_data = array( 'POST', 'PUT', 'PATCH', 'DELETE' );
+
+		if ( in_array( $request->get_method(), $accepts_body_data, true ) ) {
+			$order[] = 'POST';
+		}
+
+		$order[] = 'GET';
+		$order[] = 'URL';
+		$order[] = 'defaults';
+
+		$order = apply_filters( 'rest_request_parameter_order', $order, $request );
+
+		$first = reset( $order );
+
+		$params                   = $property->getValue( $request );
+		$params[ $first ][ $key ] = $value;
+		$property->setValue( $request, $params );
 	}
 
 	/**
