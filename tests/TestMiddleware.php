@@ -40,6 +40,7 @@ class TestMiddleware extends TestCase {
 		static::$middleware->deinitialize();
 	}
 
+	/** @group testing */
 	public function test_register_route_with_single_method() {
 
 		register_rest_route( 'test', 'simple', array(
@@ -49,8 +50,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -78,8 +79,8 @@ class TestMiddleware extends TestCase {
 			'schema' => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -99,8 +100,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -121,8 +122,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -159,8 +160,8 @@ class TestMiddleware extends TestCase {
 			'schema' => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'PUT' );
@@ -194,8 +195,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_query_params( array( 'getParam' => 'eve' ) );
@@ -218,8 +219,8 @@ class TestMiddleware extends TestCase {
 			),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_query_params( array( 'getParam' => 'eve' ) );
@@ -243,8 +244,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'DELETE' );
@@ -264,8 +265,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -294,8 +295,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema_with_required' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -316,8 +317,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -353,8 +354,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( static::$middleware->get_url_for_schema( 'test' ) );
 
@@ -362,6 +363,7 @@ class TestMiddleware extends TestCase {
 		$schema   = $response->get_data();
 
 		$this->assertInternalType( 'array', $schema );
+		$this->assertNotEmpty( $schema );
 		$this->assertArrayHasKey( 'title', $schema );
 		$this->assertEquals( 'test', $schema['title'] );
 		$this->assertArrayHasKey( 'properties', $schema );
@@ -379,8 +381,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -402,8 +404,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );
@@ -431,8 +433,8 @@ class TestMiddleware extends TestCase {
 			'schema' => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'PUT' );
@@ -453,8 +455,8 @@ class TestMiddleware extends TestCase {
 			'schema'   => array( $this, 'get_schema' ),
 		) );
 
-		static::$middleware->load_schemas( rest_get_server() );
 		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
 
 		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
 		$request->set_method( 'POST' );

@@ -15,7 +15,7 @@ namespace IronBound\WP_REST_API\SchemaValidator\Tests;
  *
  * @package IronBound\WP_REST_API\SchemaValidator\Tests
  */
-abstract class TestCase extends \WP_Test_REST_TestCase {
+abstract class TestCase extends \WP_UnitTestCase {
 
 	/** @var \WP_REST_Server */
 	protected $server;
@@ -33,6 +33,23 @@ abstract class TestCase extends \WP_Test_REST_TestCase {
 		/** @var \WP_REST_Server $wp_rest_server */
 		global $wp_rest_server;
 		$wp_rest_server = null;
+	}
+
+	protected function assertErrorResponse( $code, $response, $status = null ) {
+
+		if ( $response instanceof \WP_REST_Response ) {
+			$this->assertTrue( $response->is_error(), print_r( $response->get_data(), true ) );
+			$response = $response->as_error();
+		}
+
+		$this->assertInstanceOf( 'WP_Error', $response );
+		$this->assertEquals( $code, $response->get_error_code() );
+
+		if ( null !== $status ) {
+			$data = $response->get_error_data();
+			$this->assertArrayHasKey( 'status', $data );
+			$this->assertEquals( $status, $data['status'] );
+		}
 	}
 
 	/**

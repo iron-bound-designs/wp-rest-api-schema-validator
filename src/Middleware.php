@@ -44,7 +44,7 @@ class Middleware {
 	private $schema_storage;
 
 	/** @var array[] '/wp/v2/posts' => [ 'GET' => 'posts', 'POST' => 'posts-post', 'PUT' => 'posts' ] */
-	private $routes_to_schema_titles = array();
+	private $routes_to_schema_urls = array();
 
 	/**
 	 * Middleware constructor.
@@ -75,6 +75,7 @@ class Middleware {
 	public function initialize() {
 		add_filter( 'rest_dispatch_request', array( $this, 'validate_and_conform_request' ), 10, 4 );
 		add_action( 'rest_api_init', array( $this, 'load_schemas' ), 100 );
+		add_filter( 'rest_endpoints', array( $this, 'remove_default_validators_and_set_variable_schemas' ) );
 	}
 
 	/**
@@ -85,6 +86,7 @@ class Middleware {
 	public function deinitialize() {
 		remove_filter( 'rest_dispatch_request', array( $this, 'validate_and_conform_request' ), 10 );
 		remove_action( 'rest_api_init', array( $this, 'load_schemas' ), 100 );
+		remove_filter( 'rest_endpoints', array( $this, 'remove_default_validators_and_set_variable_schemas' ) );
 	}
 
 	/**
@@ -107,23 +109,22 @@ class Middleware {
 	 */
 	public function load_schemas( \WP_REST_Server $server ) {
 
-		$endpoints = $this->get_endpoints_for_namespace( $server );
-		$schemas   = array();
-		$titles    = array();
+		$endpoints      = $this->get_endpoints_for_namespace( $server );
+		$schemas        = array();
+		$urls_by_method = array();
 
 		foreach ( $endpoints as $route => $handlers ) {
 
-			$single_method = false;
+			$options = $server->get_route_options( $route );
 
-			if ( empty( $handlers['schema'] ) ) {
+			if ( empty( $options['schema'] ) ) {
 				if ( empty( $handlers[0]['schema'] ) ) {
 					continue;
 				}
 
 				$default_schema = call_user_func( $handlers[0]['schema'] );
-				$single_method  = true;
 			} else {
-				$default_schema = call_user_func( $handlers['schema'] );
+				$default_schema = call_user_func( $options['schema'] );
 			}
 
 			if ( empty( $default_schema['title'] ) ) {
@@ -134,7 +135,7 @@ class Middleware {
 			$default_url         = $this->get_url_for_schema( $default_title );
 			$default_schema_json = $this->transform_schema_to_json( $default_schema );
 
-			$titles[ $route ] = array();
+			$urls_by_method[ $route ] = array();
 
 			if ( isset( $handlers['callback'] ) ) {
 				$handlers = array( $handlers );
@@ -142,31 +143,22 @@ class Middleware {
 
 			// Allow for different schemas per HTTP Method.
 			foreach ( $handlers as $i => $handler ) {
-				if ( ! is_int( $i ) ) { // Route option
-					continue;
-				}
 
-				$methods = is_string( $handler['methods'] ) ? explode( ',', $handler['methods'] ) : $handler['methods'];
+				foreach ( $handler['methods'] as $method => $_ ) {
 
-				if ( ! $single_method && isset( $handler['schema'] ) ) {
-					$method_schema_json = $this->transform_schema_to_json( call_user_func( $handler['schema'] ) );
-				} else {
-					$method_schema_json = null;
-				}
-
-				foreach ( $methods as $method ) {
-					if ( ! $method_schema_json ) {
-						$schemas[ $default_url ]     = $default_schema_json;
-						$titles[ $route ][ $method ] = $default_title;
+					if ( ! isset( $options["schema-{$method}"] ) ) {
+						$schemas[ $default_url ]             = $default_schema_json;
+						$urls_by_method[ $route ][ $method ] = $default_url;
 
 						continue;
 					}
 
-					$title = $default_title . '-' . strtolower( $method );
-					$url   = $this->get_url_for_schema( $title );
+					$method_schema_json = $this->transform_schema_to_json( call_user_func( $options["schema-{$method}"] ) );
+					$url                = $this->get_url_for_schema( $default_title, $method );
 
-					$titles[ $route ][ $method ] = $title;
-					$schemas[ $url ]             = $method_schema_json;
+					$urls_by_method[ $route ][ $method ] = $url;
+
+					$schemas[ $url ] = $method_schema_json;
 				}
 			}
 		}
@@ -179,11 +171,10 @@ class Middleware {
 		$this->uri_retriever = new UriRetriever();
 		$this->uri_retriever->setUriRetriever( $strategy );
 
-		$this->schema_storage          = new SchemaStorage( $this->uri_retriever );
-		$this->routes_to_schema_titles = $titles;
+		$this->schema_storage        = new SchemaStorage( $this->uri_retriever );
+		$this->routes_to_schema_urls = $urls_by_method;
 
 		$this->register_schema_route();
-		$this->disable_auto_core_param_validation( $server, $endpoints );
 	}
 
 	/**
@@ -205,15 +196,17 @@ class Middleware {
 		}
 
 		$method = $request->get_method();
+		$map    = $this->routes_to_schema_urls;
 
 		if ( $method === 'GET' || $method === 'DELETE' ) {
 			$schema_object = json_decode( $this->transform_schema_to_json( array(
 				'type'       => 'object',
 				'properties' => $handler['args'],
 			) ) );
+		} elseif ( isset( $map[ $route ], $map[ $route ][ $method ] ) ) {
+			$schema_object = clone $this->schema_storage->getSchema( $map[ $route ][ $method ] );
 		} else {
-			$url           = $this->get_url_for_schema( $this->routes_to_schema_titles[ $route ][ $method ] );
-			$schema_object = clone $this->schema_storage->getSchema( $url );
+			return $response;
 		}
 
 		$defaults = $request->get_default_params();
@@ -332,6 +325,53 @@ class Middleware {
 	}
 
 	/**
+	 * Remove the default validator functions from endpoints in this namespace.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param array[] $endpoints
+	 *
+	 * @return array
+	 */
+	public function remove_default_validators_and_set_variable_schemas( array $endpoints ) {
+
+		/** @var array $handlers */
+		foreach ( $endpoints as $route => $handlers ) {
+			if ( isset( $handlers['namespace'] ) && $handlers['namespace'] !== $this->namespace ) {
+				continue;
+			}
+
+			if ( isset( $handlers['callback'] ) ) {
+				$endpoints[ $route ] = $this->set_default_callbacks_for_handler( $handlers );
+
+				continue;
+			}
+
+			$handlers = array_filter( $handlers, 'is_int', ARRAY_FILTER_USE_KEY );
+
+			foreach ( $handlers as $i => $handler ) {
+
+				if ( isset( $handler['namespace'] ) && $handler['namespace'] !== $this->namespace ) {
+					continue;
+				}
+
+				$endpoints[ $route ][ $i ] = $this->set_default_callbacks_for_handler( $handler );
+
+				// Variable schema. Move to specific option for method.
+				if ( count( $handlers ) > 1 && isset( $handler['schema'] ) ) {
+					$methods = is_string( $handler['methods'] ) ? explode( ',', $handler['methods'] ) : $handler['methods'];
+
+					foreach ( $methods as $method ) {
+						$endpoints[ $route ]["schema-{$method}"] = $handler['schema'];
+					}
+				}
+			}
+		}
+
+		return $endpoints;
+	}
+
+	/**
 	 * Transform an array based schema to JSON.
 	 *
 	 * @since 1.0.0
@@ -357,11 +397,18 @@ class Middleware {
 	 * @since 1.0.0
 	 *
 	 * @param string $title The 'title' property of the schema.
+	 * @param string $method
 	 *
 	 * @return string
 	 */
-	public function get_url_for_schema( $title ) {
-		return rest_url( "{$this->namespace}/schemas/{$title}" );
+	public function get_url_for_schema( $title, $method = '' ) {
+		$url = rest_url( "{$this->namespace}/schemas/{$title}" );
+
+		if ( $method ) {
+			$url = urldecode_deep( add_query_arg( 'method', strtoupper( $method ), $url ) );
+		}
+
+		return $url;
 	}
 
 	/**
@@ -398,12 +445,8 @@ class Middleware {
 		$schema = null;
 
 		try {
-			$schema = $this->schema_storage->getSchema( $this->get_url_for_schema( $title ) );
-
-			if ( $request['method'] ) {
-				$title  .= '-' . strtolower( $request['method'] );
-				$schema = $this->schema_storage->getSchema( $this->get_url_for_schema( $title ) );
-			}
+			$url    = $this->get_url_for_schema( $title, $request['method'] );
+			$schema = $this->schema_storage->getSchema( $url );
 		} catch ( ResourceNotFoundException $e ) {
 
 			if ( ! $schema ) {
@@ -416,42 +459,6 @@ class Middleware {
 		}
 
 		return new \WP_REST_Response( json_decode( wp_json_encode( $schema ), true ) );
-	}
-
-	/**
-	 * By default, WordPress core applies its own minimial attempt at sanitizing and validating according to JSON
-	 * schema. We need to override this by setting the callbacks to false.
-	 *
-	 * Existing validation and sanitation callbacks will be preserved.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param \WP_REST_Server $server
-	 * @param array           $endpoints
-	 */
-	protected function disable_auto_core_param_validation( \WP_REST_Server $server, array $endpoints ) {
-
-		foreach ( $endpoints as $i => $handlers ) {
-
-			if ( isset( $handlers['callback'] ) ) {
-				$endpoints[ $i ] = $this->set_default_callbacks_for_handler( $handlers );
-
-				continue;
-			}
-
-			foreach ( $handlers as $j => $handler ) {
-				if ( is_int( $j ) ) {
-					$endpoints[ $i ][ $j ] = $this->set_default_callbacks_for_handler( $handler );
-				}
-			}
-		}
-
-		\Closure::bind( function ( $server, array $endpoints ) {
-
-			foreach ( $endpoints as $route => $handlers ) {
-				$server->endpoints[ $route ] = $handlers;
-			}
-		}, null, $server )( $server, $endpoints );
 	}
 
 	/**
@@ -496,32 +503,20 @@ class Middleware {
 	 */
 	protected function get_endpoints_for_namespace( \WP_REST_Server $server ) {
 
-		$namespace = '/' . $this->namespace;
+		$routes  = $server->get_routes();
+		$matched = array();
 
-		$endpoints = $this->get_endpoint_configs( $server );
-		$endpoints = array_filter( $endpoints, function ( $route ) use ( $namespace ) {
-			return strpos( $route, $namespace ) === 0;
-		}, ARRAY_FILTER_USE_KEY );
+		foreach ( $routes as $route => $handlers ) {
+			$options = $server->get_route_options( $route );
 
-		return $endpoints;
-	}
+			if ( ! isset( $options['namespace'] ) || $options['namespace'] !== $this->namespace ) {
+				continue;
+			}
 
-	/**
-	 * Get the configuration that routes were registered with.
-	 *
-	 * The REST server does not provide any introspection to this data without doing a lot of heavy processing.
-	 * This is the easiest way to get access to the raw data without abusing filters or causing a performance hit.
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param \WP_REST_Server $server
-	 *
-	 * @return array
-	 */
-	protected function get_endpoint_configs( \WP_REST_Server $server ) {
-		return \Closure::bind( function ( $server ) {
-			return $server->endpoints;
-		}, null, $server )( $server );
+			$matched[ $route ] = $handlers;
+		}
+
+		return $matched;
 	}
 
 	/**
