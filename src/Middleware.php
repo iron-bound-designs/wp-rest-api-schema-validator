@@ -12,7 +12,9 @@ namespace IronBound\WP_REST_API\SchemaValidator;
 
 use JsonSchema\Constraints\Constraint;
 use JsonSchema\Constraints\Factory;
+use JsonSchema\Entity\JsonPointer;
 use JsonSchema\Exception\ResourceNotFoundException;
+use JsonSchema\Iterator\ObjectIterator;
 use JsonSchema\SchemaStorage;
 use JsonSchema\Uri\Retrievers\PredefinedArray;
 use JsonSchema\Uri\UriRetriever;
@@ -58,6 +60,7 @@ class Middleware {
 		$this->strings   = wp_parse_args( $strings, array(
 			'methodParamDescription' => 'HTTP method to get the schema for. If not provided, will use the base schema.',
 			'schemaNotFound'         => 'Schema not found.',
+			'expandSchema'			 => 'Expand $ref schemas.'
 		) );
 
 		if ( $check_mode === 0 ) {
@@ -421,6 +424,10 @@ class Middleware {
 					'description' => $this->strings['methodParamDescription'],
 					'type'        => 'string',
 					'enum'        => array( 'GET', 'POST', 'PUT', 'PATCH', 'DELETE' ),
+				),
+				'schema' => array(
+					'description' => $this->strings['expandSchema'],
+					'type'        => 'boolean'
 				)
 			),
 			'methods'  => 'GET',
@@ -445,6 +452,11 @@ class Middleware {
 		try {
 			$url    = $this->get_url_for_schema( $title, $request['method'] );
 			$schema = $this->schema_storage->getSchema( $url );
+
+			if ( $request['expand'] ) {
+				$schema = $this->expand( $schema );
+			}
+
 		} catch ( ResourceNotFoundException $e ) {
 
 			if ( ! $schema ) {
@@ -457,6 +469,28 @@ class Middleware {
 		}
 
 		return new \WP_REST_Response( json_decode( wp_json_encode( $schema ), true ) );
+	}
+
+	/**
+	 * Expand $ref schemas.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param \stdClass $schema
+	 *
+	 * @return \stdClass
+	 */
+	protected function expand( $schema ) {
+
+		foreach ( $schema as $i => $sub_schema ) {
+			if ( is_object( $sub_schema ) && property_exists( $sub_schema, '$ref' ) && is_string( $sub_schema->{'$ref'} ) ) {
+				$schema->{$i} = $this->schema_storage->resolveRefSchema( $sub_schema );
+			} elseif ( is_object( $sub_schema ) ) {
+				$schema->{$i} = $this->expand( $sub_schema );
+			}
+		}
+
+		return $schema;
 	}
 
 	/**
