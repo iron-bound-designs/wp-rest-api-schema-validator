@@ -40,7 +40,6 @@ class TestMiddleware extends TestCase {
 		static::$middleware->deinitialize();
 	}
 
-	/** @group testing */
 	public function test_register_route_with_single_method() {
 
 		register_rest_route( 'test', 'simple', array(
@@ -414,7 +413,9 @@ class TestMiddleware extends TestCase {
 
 		$response = $this->server->dispatch( $request );
 		$this->assertEquals( 200, $response->get_status() );
-		$this->assertNull( $request['readOnly'], 'Read only property set to null.' );
+
+		$params = $request->get_params();
+		$this->assertArrayNotHasKey( 'readOnly', $params, 'Read only property set to null.' );
 	}
 
 	public function test_invalid_createonly_properties_do_not_error_on_non_create_requests() {
@@ -443,7 +444,9 @@ class TestMiddleware extends TestCase {
 
 		$response = $this->server->dispatch( $request );
 		$this->assertEquals( 200, $response->get_status() );
-		$this->assertNull( $request['createOnly'], 'Create only property set to null.' );
+
+		$params = $request->get_params();
+		$this->assertArrayNotHasKey( 'createOnly', $params, 'Create only property set to null.' );
 	}
 
 	public function test_invalid_createonly_properties_error_on_create_requests() {

@@ -45,7 +45,7 @@ class Middleware {
 	/** @var SchemaStorage */
 	private $schema_storage;
 
-	/** @var array[] '/wp/v2/posts' => [ 'GET' => 'posts', 'POST' => 'posts-post', 'PUT' => 'posts' ] */
+	/** @var array[] '/wp/v2/posts' => [ 'GET' => 'posts', 'POST' => 'http://...', 'PUT' => 'http://...' ] */
 	private $routes_to_schema_urls = array();
 
 	/**
@@ -60,7 +60,7 @@ class Middleware {
 		$this->strings   = wp_parse_args( $strings, array(
 			'methodParamDescription' => 'HTTP method to get the schema for. If not provided, will use the base schema.',
 			'schemaNotFound'         => 'Schema not found.',
-			'expandSchema'			 => 'Expand $ref schemas.'
+			'expandSchema'           => 'Expand $ref schemas.'
 		) );
 
 		if ( $check_mode === 0 ) {
@@ -206,8 +206,10 @@ class Middleware {
 				'type'       => 'object',
 				'properties' => $handler['args'],
 			) ) );
+			$described_by  = isset( $map[ $route ], $map[ $route ][ $method ] ) ? $map[ $route ][ $method ] : null;
 		} elseif ( isset( $map[ $route ], $map[ $route ][ $method ] ) ) {
 			$schema_object = clone $this->schema_storage->getSchema( $map[ $route ][ $method ] );
+			$described_by  = $map[ $route ][ $method ];
 		} else {
 			return $response;
 		}
@@ -218,6 +220,8 @@ class Middleware {
 		$request->set_default_params( $defaults );
 
 		if ( ! $to_validate ) {
+			$this->add_described_by( $request, $described_by );
+
 			return $response;
 		}
 
@@ -227,8 +231,14 @@ class Middleware {
 			return $validated;
 		}
 
+		$this->add_described_by( $request, $described_by );
+
 		foreach ( $validated as $property => $value ) {
 			$this->set_request_param( $request, $property, $value );
+		}
+
+		if ( $described_by ) {
+			$this->add_described_by( $request, $described_by );
 		}
 
 		return null;
@@ -323,6 +333,36 @@ class Middleware {
 		}
 
 		return new Validator( $factory );
+	}
+
+	/**
+	 * Add the described by header.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param \WP_REST_Request $request
+	 * @param string           $described_by
+	 */
+	protected function add_described_by( \WP_REST_Request $request, $described_by ) {
+
+		if ( ! $described_by ) {
+			return;
+		}
+
+		add_filter( 'rest_post_dispatch', $fn = function ( $response, $_, $_request ) use ( $request, $described_by, &$fn ) {
+
+			if ( $request !== $_request ) {
+				return $response;
+			}
+
+			if ( $response instanceof \WP_REST_Response ) {
+				$response->link_header( 'describedby', $described_by );
+			}
+
+			remove_filter( 'rest_post_dispatch', $fn );
+
+			return $response;
+		}, 10, 3 );
 	}
 
 	/**
@@ -425,7 +465,7 @@ class Middleware {
 					'type'        => 'string',
 					'enum'        => array( 'GET', 'POST', 'PUT', 'PATCH', 'DELETE' ),
 				),
-				'schema' => array(
+				'expand' => array(
 					'description' => $this->strings['expandSchema'],
 					'type'        => 'boolean'
 				)
@@ -448,27 +488,48 @@ class Middleware {
 
 		$title  = $request['title'];
 		$schema = null;
+		$method = $request['method'];
 
-		try {
-			$url    = $this->get_url_for_schema( $title, $request['method'] );
-			$schema = $this->schema_storage->getSchema( $url );
+		$try = array( $this->get_url_for_schema( $title ) );
 
-			if ( $request['expand'] ) {
-				$schema = $this->expand( $schema );
-			}
+		if ( $method ) {
+			$try[] = $this->get_url_for_schema( $title, $method );
+		}
 
-		} catch ( ResourceNotFoundException $e ) {
+		foreach ( array_reverse( $try ) as $url ) {
+			try {
+				$schema = $this->schema_storage->getSchema( $url );
 
-			if ( ! $schema ) {
-				return new \WP_Error(
-					'schema_not_found',
-					$this->strings['schemaNotFound'],
-					array( 'status' => \WP_Http::NOT_FOUND )
-				);
+				if ( $request['expand'] ) {
+					$schema = $this->expand( $schema );
+				}
+				break;
+			} catch ( ResourceNotFoundException $e ) {
+
 			}
 		}
 
-		return new \WP_REST_Response( json_decode( wp_json_encode( $schema ), true ) );
+		if ( ! $schema ) {
+			return new \WP_Error(
+				'schema_not_found',
+				$this->strings['schemaNotFound'],
+				array( 'status' => \WP_Http::NOT_FOUND )
+			);
+		}
+
+		$response = new \WP_REST_Response( json_decode( wp_json_encode( $schema ), true ) );
+
+		foreach ( $this->routes_to_schema_urls as $path => $urls ) {
+			foreach ( $urls as $maybe_url ) {
+				if ( $maybe_url === $url ) {
+					$template = $this->convert_regex_route_to_uri_template( rest_url( $path ) );
+					$response->link_header( 'describes', $template );
+					break 2;
+				}
+			}
+		}
+
+		return $response;
 	}
 
 	/**
@@ -621,5 +682,16 @@ class Middleware {
 		}
 
 		return $obj;
+	}
+
+	/**
+	 * Convert a regex based route to one that follows the URI template standard.
+	 *
+	 * @param string $url
+	 *
+	 * @return string
+	 */
+	private function convert_regex_route_to_uri_template( $url ) {
+		return preg_replace( '/\(.[^<*]<(\w+)>[^<.]*\)/', '{$1}', $url );
 	}
 }
