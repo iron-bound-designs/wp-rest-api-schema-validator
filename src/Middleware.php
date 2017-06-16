@@ -234,6 +234,12 @@ class Middleware {
 		$this->add_described_by( $request, $described_by );
 
 		foreach ( $validated as $property => $value ) {
+
+			if ( $value === null && $request[ $property ] !== null ) {
+				unset( $request[ $property ] );
+				continue;
+			}
+
 			$this->set_request_param( $request, $property, $value );
 		}
 
@@ -322,6 +328,10 @@ class Middleware {
 		$factory->setConstraintClass(
 			'undefined',
 			'\IronBound\WP_REST_API\SchemaValidator\UndefinedConstraint'
+		);
+		$factory->setConstraintClass(
+			'format',
+			'\IronBound\WP_REST_API\SchemaValidator\FormatConstraint'
 		);
 
 		if ( $is_create_request ) {

@@ -470,6 +470,140 @@ class TestMiddleware extends TestCase {
 		$this->assertErrorResponse( 'rest_invalid_param', $response );
 	}
 
+	public function test_html_format_uses_basic_tags_if_none_specified() {
+
+		$schema = array(
+			'$schema'    => 'http://json-schema.org/schema#',
+			'title'      => 'html',
+			'type'       => 'object',
+			'properties' => array(
+				'html' => array(
+					'type'   => 'string',
+					'format' => 'html',
+				)
+			)
+		);
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response(); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $schema, 'POST' ),
+			'schema'   => function () use ( $schema ) { return $schema; }
+		) );
+
+		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'html' => '<div>My Text</div>' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertErrorResponse( 'rest_invalid_param', $response );
+	}
+
+	public function test_html_format_uses_basic_tags_if_none_specified_valid_request() {
+
+		$schema = array(
+			'$schema'    => 'http://json-schema.org/schema#',
+			'title'      => 'html',
+			'type'       => 'object',
+			'properties' => array(
+				'html' => array(
+					'type'   => 'string',
+					'format' => 'html',
+				)
+			)
+		);
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response(); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $schema, 'POST' ),
+			'schema'   => function () use ( $schema ) { return $schema; }
+		) );
+
+		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'html' => '<strong>My Text</strong>' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertEquals( 200, $response->get_status() );
+	}
+
+	public function test_html_format_specify_tags() {
+
+		$schema = array(
+			'$schema'    => 'http://json-schema.org/schema#',
+			'title'      => 'html',
+			'type'       => 'object',
+			'properties' => array(
+				'html' => array(
+					'type'              => 'string',
+					'format'            => 'html',
+					'formatAllowedHtml' => array( 'a' )
+				)
+			)
+		);
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response(); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $schema, 'POST' ),
+			'schema'   => function () use ( $schema ) { return $schema; }
+		) );
+
+		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'html' => '<strong>My Text</strong>' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertErrorResponse( 'rest_invalid_param', $response );
+	}
+
+	public function test_html_format_specify_tags_valid_request() {
+
+		$schema = array(
+			'$schema'    => 'http://json-schema.org/schema#',
+			'title'      => 'html',
+			'type'       => 'object',
+			'properties' => array(
+				'html' => array(
+					'type'              => 'string',
+					'format'            => 'html',
+					'formatAllowedHtml' => array( 'div' )
+				)
+			)
+		);
+
+		register_rest_route( 'test', 'simple', array(
+			'methods'  => 'POST',
+			'callback' => function () { return new \WP_REST_Response(); },
+			'args'     => $this->get_endpoint_args_for_item_schema( $schema, 'POST' ),
+			'schema'   => function () use ( $schema ) { return $schema; }
+		) );
+
+		static::$middleware->initialize();
+		static::$middleware->load_schemas( rest_get_server() );
+
+		$request = \WP_REST_Request::from_url( rest_url( '/test/simple' ) );
+		$request->set_method( 'POST' );
+		$request->add_header( 'content-type', 'application/json' );
+		$request->set_body( wp_json_encode( array( 'html' => '<div>My Text</div>' ) ) );
+
+		$response = $this->server->dispatch( $request );
+		$this->assertEquals( 200, $response->get_status() );
+	}
+
 	public function get_schema() {
 		return array(
 			'$schema'    => 'http://json-schema.org/schema#',
