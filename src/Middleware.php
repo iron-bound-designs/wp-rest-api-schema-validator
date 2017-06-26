@@ -201,6 +201,10 @@ class Middleware {
 		$method = $request->get_method();
 		$map    = $this->routes_to_schema_urls;
 
+		if ( strpos( trim( $route, '/' ), $this->namespace ) !== 0 ) {
+			return $response;
+		}
+
 		if ( $method === 'GET' || $method === 'DELETE' ) {
 			$schema_object = json_decode( $this->transform_schema_to_json( array(
 				'type'       => 'object',
