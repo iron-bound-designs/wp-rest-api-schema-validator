@@ -64,7 +64,7 @@ class Middleware {
 		) );
 
 		if ( $check_mode === 0 ) {
-			$check_mode = Constraint::CHECK_MODE_NORMAL | Constraint::CHECK_MODE_APPLY_DEFAULTS | Constraint::CHECK_MODE_COERCE_TYPES;
+			$check_mode = Constraint::CHECK_MODE_NORMAL | Constraint::CHECK_MODE_APPLY_DEFAULTS | Constraint::CHECK_MODE_COERCE_TYPES | Constraint::CHECK_MODE_TYPE_CAST;
 		}
 
 		$this->check_mode = $check_mode;
