@@ -53,6 +53,7 @@ class FormatConstraint extends \JsonSchema\Constraints\FormatConstraint {
 			}
 		} else {
 			$kses_format = $allowedtags;
+			$kses_format['p'] = array();
 		}
 
 		return trim( $html ) === trim( wp_kses( $html, $kses_format ) );
