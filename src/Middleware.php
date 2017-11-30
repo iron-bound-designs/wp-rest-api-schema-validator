@@ -198,12 +198,45 @@ class Middleware {
 			return $response;
 		}
 
-		$method = $request->get_method();
-		$map    = $this->routes_to_schema_urls;
-
 		if ( strpos( trim( $route, '/' ), $this->namespace ) !== 0 ) {
 			return $response;
 		}
+
+		$method = $request->get_method();
+
+		if ( $method === 'PATCH' ) {
+			$patch_get_info = $this->get_validate_info_for_method( 'GET', $route, $handler );
+			$validated      = $this->validate_and_conform_for_method( $request, $patch_get_info['schema'], 'GET' );
+
+			if ( is_wp_error( $validated ) ) {
+				return $validated;
+			}
+		}
+
+		$info = $this->get_validate_info_for_method( $method, $route, $handler );
+
+		if ( ! $info ) {
+			return $response;
+		}
+
+		if ( ! empty( $info['described'] ) ) {
+			$this->add_described_by( $request, $info['described'] );
+		}
+
+		return $this->validate_and_conform_for_method( $request, $info['schema'], $method );
+	}
+
+	/**
+	 * Get the schema to use for a given method.
+	 *
+	 * @param string $method
+	 * @param string $route
+	 * @param array  $handler
+	 *
+	 * @return array
+	 */
+	protected function get_validate_info_for_method( $method, $route, $handler ) {
+		$map = $this->routes_to_schema_urls;
 
 		if ( $method === 'GET' || $method === 'DELETE' ) {
 			$schema_object = json_decode( $this->transform_schema_to_json( array(
@@ -215,27 +248,84 @@ class Middleware {
 			$schema_object = clone $this->schema_storage->getSchema( $map[ $route ][ $method ] );
 			$described_by  = $map[ $route ][ $method ];
 		} else {
-			return $response;
+			return array();
 		}
 
-		$defaults = $request->get_default_params();
-		$request->set_default_params( array() );
-		$to_validate = $request->get_params();
-		$request->set_default_params( $defaults );
+		return array(
+			'schema'    => $schema_object,
+			'described' => $described_by,
+		);
+	}
+
+
+	/**
+	 * Conform the request or return an error.
+	 *
+	 * @param \WP_REST_Request $request
+	 * @param object           $schema
+	 * @param string           $method
+	 *
+	 * @return null|\WP_Error
+	 */
+	protected function validate_and_conform_for_method( $request, $schema, $method ) {
+
+		$to_validate = $this->get_params_to_validate( $request, $method );
 
 		if ( ! $to_validate ) {
-			$this->add_described_by( $request, $described_by );
-
-			return $response;
+			return null;
 		}
 
-		$validated = $this->validate_params( $to_validate, $schema_object, $method );
+		$validated = $this->validate_params( $to_validate, $schema, $method );
 
 		if ( is_wp_error( $validated ) ) {
 			return $validated;
 		}
 
-		$this->add_described_by( $request, $described_by );
+		$this->update_request_params( $request, $validated );
+
+		return null;
+	}
+
+	/**
+	 * Get the parameters that we should be validating.
+	 *
+	 * @param \WP_REST_Request $request
+	 * @param string           $method
+	 *
+	 * @return array
+	 */
+	protected function get_params_to_validate( $request, $method ) {
+
+		$defaults = $request->get_default_params();
+		$request->set_default_params( array() );
+
+		if ( $request->get_method() === 'PATCH' && $method === 'PATCH' ) {
+			$to_validate = $request->get_json_params() ?: $request->get_body_params();
+		} elseif ( $request->get_method() === 'PATCH' && $method === 'GET' ) {
+			$to_validate = $request->get_query_params();
+		} else {
+			$to_validate = $request->get_params();
+			
+			foreach ( $request->get_url_params() as $param => $value ) {
+				unset( $to_validate[ $param ] );
+			}
+		}
+
+		$request->set_default_params( $defaults );
+
+		return $to_validate;
+	}
+
+	/**
+	 * Update the params on a request object.
+	 *
+	 * @param \WP_REST_Request $request
+	 * @param array            $validated
+	 */
+	protected function update_request_params( $request, $validated ) {
+
+		$defaults = $request->get_default_params();
+		$request->set_default_params( array() );
 
 		foreach ( $validated as $property => $value ) {
 
@@ -244,14 +334,14 @@ class Middleware {
 				continue;
 			}
 
+			if ( $value === $request->get_param( $property ) ) {
+				continue;
+			}
+
 			$this->set_request_param( $request, $property, $value );
 		}
 
-		if ( $described_by ) {
-			$this->add_described_by( $request, $described_by );
-		}
-
-		return null;
+		$request->set_default_params( $defaults );
 	}
 
 	/**
@@ -303,7 +393,7 @@ class Middleware {
 		$invalid_params = array();
 
 		foreach ( $validator->getErrors() as $error ) {
-			$invalid_params[ $error['property'] ] = $error['message'];
+			$invalid_params[ $error['property'] ?: '#' ] = $error['message'];
 		}
 
 		return new \WP_Error(
@@ -668,10 +758,21 @@ class Middleware {
 
 		$order = apply_filters( 'rest_request_parameter_order', $order, $request );
 
-		$first = reset( $order );
+		$params    = $property->getValue( $request );
+		$found_key = false;
 
-		$params                   = $property->getValue( $request );
-		$params[ $first ][ $key ] = $value;
+		foreach ( $order as $type ) {
+			if ( isset( $params[ $type ][ $key ] ) ) {
+				$params[ $type ][ $key ] = $value;
+				$found_key               = true;
+				break;
+			}
+		}
+
+		if ( ! $found_key ) {
+			$params[ $order[0] ][ $key ] = $value;
+		}
+
 		$property->setValue( $request, $params );
 	}
 
