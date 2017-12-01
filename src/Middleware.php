@@ -324,9 +324,6 @@ class Middleware {
 	 */
 	protected function update_request_params( $request, $validated ) {
 
-		$defaults = $request->get_default_params();
-		$request->set_default_params( array() );
-
 		foreach ( $validated as $property => $value ) {
 
 			if ( $value === null && $request[ $property ] !== null ) {
@@ -340,8 +337,6 @@ class Middleware {
 
 			$this->set_request_param( $request, $property, $value );
 		}
-
-		$request->set_default_params( $defaults );
 	}
 
 	/**
