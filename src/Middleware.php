@@ -36,6 +36,9 @@ class Middleware {
 	/** @var int */
 	private $check_mode;
 
+	/** @var array */
+	private $options;
+
 	/** @var array[] */
 	private $shared_schemas = array();
 
@@ -54,8 +57,9 @@ class Middleware {
 	 * @param string $namespace
 	 * @param array  $strings
 	 * @param int    $check_mode Check mode. See Constraint class constants.
+	 * @param array  $options    Additional options to customize how the middleware behaves.
 	 */
-	public function __construct( $namespace, array $strings = array(), $check_mode = 0 ) {
+	public function __construct( $namespace, array $strings = array(), $check_mode = 0, array $options = [] ) {
 		$this->namespace = trim( $namespace, '/' );
 		$this->strings   = wp_parse_args( $strings, array(
 			'methodParamDescription' => 'HTTP method to get the schema for. If not provided, will use the base schema.',
@@ -68,6 +72,7 @@ class Middleware {
 		}
 
 		$this->check_mode = $check_mode;
+		$this->options = $options;
 	}
 
 	/**
@@ -271,9 +276,9 @@ class Middleware {
 
 		$to_validate = $this->get_params_to_validate( $request, $method );
 
-		if ( ! $to_validate ) {
+		/*if ( ! $to_validate ) {
 			return null;
-		}
+		}*/
 
 		$validated = $this->validate_params( $to_validate, $schema, $method );
 
@@ -303,6 +308,8 @@ class Middleware {
 			$to_validate = $request->get_json_params() ?: $request->get_body_params();
 		} elseif ( $request->get_method() === 'PATCH' && $method === 'GET' ) {
 			$to_validate = $request->get_query_params();
+		} elseif ( ! empty( $this->options['strict_body'] ) && ( $request->get_method() === 'POST'  || $request->get_method() === 'PUT' ) ) {
+			$to_validate = $request->get_json_params() ?: $request->get_body_params();
 		} else {
 			$to_validate = $request->get_params();
 			
