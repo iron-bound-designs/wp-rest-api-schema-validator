@@ -64,7 +64,7 @@ class Middleware {
 		$this->strings   = wp_parse_args( $strings, array(
 			'methodParamDescription' => 'HTTP method to get the schema for. If not provided, will use the base schema.',
 			'schemaNotFound'         => 'Schema not found.',
-			'expandSchema'           => 'Expand $ref schemas.'
+			'expandSchema'           => 'Expand $ref schemas.',
 		) );
 
 		if ( $check_mode === 0 ) {
@@ -72,7 +72,7 @@ class Middleware {
 		}
 
 		$this->check_mode = $check_mode;
-		$this->options = $options;
+		$this->options    = $options;
 	}
 
 	/**
@@ -118,7 +118,7 @@ class Middleware {
 	public function load_schemas( \WP_REST_Server $server ) {
 
 		$endpoints      = $this->get_endpoints_for_namespace( $server );
-		$schemas        = array();
+		$schemas        = $callables = array();
 		$urls_by_method = array();
 
 		foreach ( $endpoints as $route => $handlers ) {
@@ -130,20 +130,34 @@ class Middleware {
 					continue;
 				}
 
-				$default_schema = call_user_func( $handlers[0]['schema'] );
+				$callable = $handlers[0]['schema'];
+				$title    = isset( $handlers[0]['schema-title'] ) ? $handlers[0]['schema-title'] : '';
 			} else {
-				$default_schema = call_user_func( $options['schema'] );
+				$callable = $options['schema'];
+				$title    = isset( $options['schema-title'] ) ? $options['schema-title'] : '';
 			}
 
-			if ( empty( $default_schema['title'] ) ) {
-				continue;
+			if ( $title ) {
+				$schema = null;
+			} else {
+				$schema = call_user_func( $callable );
+
+				if ( empty( $schema['title'] ) ) {
+					continue;
+				}
+
+				$title = $schema['title'];
 			}
 
-			$default_title       = $default_schema['title'];
-			$default_url         = $this->get_url_for_schema( $default_title );
-			$default_schema_json = $this->transform_schema_to_json( $default_schema );
+			$uri = $this->get_url_for_schema( $title );
 
 			$urls_by_method[ $route ] = array();
+
+			if ( $schema ) {
+				$schemas[ $uri ] = wp_json_encode( $schema );
+			} else {
+				$callables[ $uri ] = $callable;
+			}
 
 			if ( isset( $handlers['callback'] ) ) {
 				$handlers = array( $handlers );
@@ -151,31 +165,32 @@ class Middleware {
 
 			// Allow for different schemas per HTTP Method.
 			foreach ( $handlers as $i => $handler ) {
-
 				foreach ( $handler['methods'] as $method => $_ ) {
 
 					if ( ! isset( $options["schema-{$method}"] ) ) {
-						$schemas[ $default_url ]             = $default_schema_json;
-						$urls_by_method[ $route ][ $method ] = $default_url;
+						$urls_by_method[ $route ][ $method ] = $uri;
 
 						continue;
 					}
 
-					$method_schema_json = $this->transform_schema_to_json( call_user_func( $options["schema-{$method}"] ) );
-					$url                = $this->get_url_for_schema( $default_title, $method );
+					$method_uri = $this->get_url_for_schema( $title, $method );
 
-					$urls_by_method[ $route ][ $method ] = $url;
-
-					$schemas[ $url ] = $method_schema_json;
+					$callables[ $method_uri ]            = $options["schema-{$method}"];
+					$urls_by_method[ $route ][ $method ] = $method_uri;
 				}
 			}
 		}
 
+		$strategy = new LazyRetriever( $callables );
+
 		foreach ( $this->shared_schemas as $shared_schema ) {
-			$schemas[ $this->get_url_for_schema( $shared_schema['title'] ) ] = wp_json_encode( $shared_schema );
+			$strategy->add_schema( $this->get_url_for_schema( $shared_schema['title'] ), wp_json_encode( $shared_schema ) );
 		}
 
-		$strategy            = new PredefinedArray( $schemas );
+		foreach ( $schemas as $uri => $schema ) {
+			$strategy->add_schema( $uri, $schema );
+		}
+
 		$this->uri_retriever = new UriRetriever();
 		$this->uri_retriever->setUriRetriever( $strategy );
 
@@ -272,7 +287,7 @@ class Middleware {
 	 *
 	 * @return null|\WP_Error
 	 */
-	protected function validate_and_conform_for_method( $request, $schema, $method ) {
+	public function validate_and_conform_for_method( $request, $schema, $method ) {
 
 		$to_validate = $this->get_params_to_validate( $request, $method );
 
@@ -308,11 +323,11 @@ class Middleware {
 			$to_validate = $request->get_json_params() ?: $request->get_body_params();
 		} elseif ( $request->get_method() === 'PATCH' && $method === 'GET' ) {
 			$to_validate = $request->get_query_params();
-		} elseif ( ! empty( $this->options['strict_body'] ) && ( $request->get_method() === 'POST'  || $request->get_method() === 'PUT' ) ) {
+		} elseif ( ! empty( $this->options['strict_body'] ) && ( $request->get_method() === 'POST' || $request->get_method() === 'PUT' ) ) {
 			$to_validate = $request->get_json_params() ?: $request->get_body_params();
 		} else {
 			$to_validate = $request->get_params();
-			
+
 			foreach ( $request->get_url_params() as $param => $value ) {
 				unset( $to_validate[ $param ] );
 			}
@@ -573,11 +588,11 @@ class Middleware {
 				),
 				'expand' => array(
 					'description' => $this->strings['expandSchema'],
-					'type'        => 'boolean'
-				)
+					'type'        => 'boolean',
+				),
 			),
 			'methods'  => 'GET',
-			'callback' => array( $this, 'get_schema_endpoint' )
+			'callback' => array( $this, 'get_schema_endpoint' ),
 		) );
 	}
 
@@ -623,7 +638,7 @@ class Middleware {
 			);
 		}
 
-		$response = new \WP_REST_Response( json_decode( wp_json_encode( $schema ), true ) );
+		$response = new \WP_REST_Response( $this->clean_schema( json_decode( wp_json_encode( $schema ), true ) ) );
 
 		foreach ( $this->routes_to_schema_urls as $path => $urls ) {
 			foreach ( $urls as $maybe_url ) {
@@ -636,6 +651,27 @@ class Middleware {
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Clean a schema of any arg_options.
+	 *
+	 * @param array $schema
+	 *
+	 * @return array
+	 */
+	protected function clean_schema( $schema ) {
+
+		if ( is_array( $schema ) ) {
+			foreach ( $schema as $key => $value ) {
+				if ( is_array( $value ) ) {
+					unset( $value['arg_options'] );
+					$schema[ $key ] = $this->clean_schema( $value );
+				}
+			}
+		}
+
+		return $schema;
 	}
 
 	/**
