@@ -173,10 +173,40 @@ class Middleware {
 						continue;
 					}
 
+					$method_schema_cb = $options["schema-{$method}"];
+					$method_schema    = null;
+
+					if ( isset( $options["schema-title-{$method}"] ) ) {
+						$method_title = $options["schema-title-{$method}"];
+					} else {
+						$method_schema = call_user_func( $method_schema_cb );
+
+						if ( empty( $method_schema['title'] ) ) {
+							continue;
+						}
+
+						$method_title = $method_schema['title'];
+					}
+
 					$method_uri = $this->get_url_for_schema( $title, $method );
 
-					$callables[ $method_uri ]            = $options["schema-{$method}"];
+					if ( $method_schema ) {
+						$schemas[ $method_uri ] = wp_json_encode( $method_schema );
+					} else {
+						$callables[ $method_uri ] = $method_schema_cb;
+					}
+
 					$urls_by_method[ $route ][ $method ] = $method_uri;
+
+					if ( $method_title !== $title ) {
+						$alt_method_uri = $this->get_url_for_schema( $method_title );
+
+						if ( $method_schema ) {
+							$schemas[ $alt_method_uri ] = wp_json_encode( $method_schema );
+						} else {
+							$callables[ $alt_method_uri ] = $method_schema_cb;
+						}
+					}
 				}
 			}
 		}
@@ -346,6 +376,9 @@ class Middleware {
 	 */
 	protected function update_request_params( $request, $validated ) {
 
+		$defaults = $request->get_default_params();
+		$request->set_default_params( array() );
+
 		foreach ( $validated as $property => $value ) {
 
 			if ( $value === null && $request[ $property ] !== null ) {
@@ -359,6 +392,8 @@ class Middleware {
 
 			$this->set_request_param( $request, $property, $value );
 		}
+
+		$request->set_default_params( $defaults );
 	}
 
 	/**
@@ -444,6 +479,10 @@ class Middleware {
 			'format',
 			'\IronBound\WP_REST_API\SchemaValidator\FormatConstraint'
 		);
+		$factory->setConstraintClass(
+			'type',
+			'\IronBound\WP_REST_API\SchemaValidator\TypeConstraint'
+		);
 
 		if ( $is_create_request ) {
 			$factory->addConfig( UndefinedConstraint::CHECK_MODE_CREATE_REQUEST );
@@ -525,7 +564,14 @@ class Middleware {
 
 					foreach ( $methods as $method ) {
 						$endpoints[ $route ]["schema-{$method}"] = $handler['schema'];
+
+						if ( isset( $handler['schema-title'] ) ) {
+							$endpoints[ $route ]["schema-title-{$method}"] = $handler['schema-title'];
+						}
 					}
+				} elseif ( isset( $handler['schema'] ) ) {
+					// Have the per-route schema overwrite the main schema.
+					$endpoints[ $route ]['schema'] = $handler['schema'];
 				}
 			}
 		}
