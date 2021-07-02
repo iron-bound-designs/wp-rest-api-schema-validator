@@ -639,6 +639,7 @@ class Middleware {
 			),
 			'methods'  => 'GET',
 			'callback' => array( $this, 'get_schema_endpoint' ),
+			'permission_callback'  => '__return_true',
 		) );
 	}
 
