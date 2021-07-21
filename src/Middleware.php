@@ -827,7 +827,7 @@ class Middleware {
 
 		$content_type = $request->get_content_type();
 
-		if ( $content_type['value'] === 'application/json' ) {
+		if ( $content_type === null || $content_type['value'] === 'application/json' ) {
 			$order[] = 'JSON';
 		}
 
