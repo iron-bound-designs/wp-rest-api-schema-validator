@@ -390,7 +390,7 @@ class Middleware {
 				continue;
 			}
 
-			$this->set_request_param( $request, $property, $value );
+			$request->set_param( $property, $value );
 		}
 
 		$request->set_default_params( $defaults );
@@ -799,66 +799,6 @@ class Middleware {
 		}
 
 		return $matched;
-	}
-
-	/**
-	 * Set a parameter's value on a request object.
-	 *
-	 * WP_REST_Request::set_param() does not properly set a value while following parameter order.
-	 * See https://core.trac.wordpress.org/ticket/40344
-	 *
-	 * @since 1.0.0
-	 *
-	 * @param \WP_REST_Request $request
-	 * @param string           $key
-	 * @param mixed            $value
-	 */
-	protected function set_request_param( \WP_REST_Request $request, $key, $value ) {
-
-		static $property = null;
-
-		if ( ! $property ) {
-			$reflection = new \ReflectionClass( '\WP_REST_Request' );
-			$property   = $reflection->getProperty( 'params' );
-			$property->setAccessible( true );
-		}
-
-		$order = array();
-
-		$content_type = $request->get_content_type();
-
-		if ( $content_type['value'] === 'application/json' ) {
-			$order[] = 'JSON';
-		}
-
-		$accepts_body_data = array( 'POST', 'PUT', 'PATCH', 'DELETE' );
-
-		if ( in_array( $request->get_method(), $accepts_body_data, true ) ) {
-			$order[] = 'POST';
-		}
-
-		$order[] = 'GET';
-		$order[] = 'URL';
-		$order[] = 'defaults';
-
-		$order = apply_filters( 'rest_request_parameter_order', $order, $request );
-
-		$params    = $property->getValue( $request );
-		$found_key = false;
-
-		foreach ( $order as $type ) {
-			if ( isset( $params[ $type ][ $key ] ) ) {
-				$params[ $type ][ $key ] = $value;
-				$found_key               = true;
-				break;
-			}
-		}
-
-		if ( ! $found_key ) {
-			$params[ $order[0] ][ $key ] = $value;
-		}
-
-		$property->setValue( $request, $params );
 	}
 
 	/**
